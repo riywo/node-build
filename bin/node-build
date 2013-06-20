@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-RUBY_BUILD_VERSION="20130518"
+NODE_BUILD_VERSION="20130620"
 
 set -E
 exec 3<&2 # preserve original stderr at fd 3
@@ -149,23 +149,21 @@ make_package() {
   popd >&4
 }
 
-compute_md5() {
-  if type md5 &>/dev/null; then
-    md5 -q
-  elif type openssl &>/dev/null; then
-    local output="$(openssl md5)"
-    echo "${output##* }"
-  elif type md5sum &>/dev/null; then
-    local output="$(md5sum -b)"
-    echo "${output% *}"
+compute_sha1() {
+  if type shasum &>/dev/null; then
+    local output="$(shasum)"
+    echo $output | awk '{print $1}'
+  elif type sha1sum &>/dev/null; then
+    local output="$(sha1sum)"
+    echo $output | awk '{print $1}'
   else
     return 1
   fi
 }
 
 verify_checksum() {
-  # If there's no MD5 support, return success
-  [ -n "$HAS_MD5_SUPPORT" ] || return 0
+  # If there's no SHA1 support, return success
+  [ -n "$HAS_SHA1_SUPPORT" ] || return 0
 
   # If the specified filename doesn't exist, return success
   local filename="$1"
@@ -176,13 +174,13 @@ verify_checksum() {
   [ -n "$expected_checksum" ] || return 0
 
   # If the computed checksum is empty, return failure
-  local computed_checksum="$(compute_md5 < "$filename")"
+  local computed_checksum="$(compute_sha1 < "$filename")"
   [ -n "$computed_checksum" ] || return 1
 
   if [ "$expected_checksum" != "$computed_checksum" ]; then
     { echo
       echo "checksum mismatch: ${filename} (file is corrupt)"
-      echo "expected $expected_checksum, got $computed_checksum"
+      echo "expected '$expected_checksum', got '$computed_checksum'"
       echo
     } >&4
     return 1
@@ -231,8 +229,8 @@ fetch_tarball() {
     checksum="${package_url#*#}"
     package_url="${package_url%%#*}"
 
-    if [ -n "$RUBY_BUILD_MIRROR_URL" ]; then
-      mirror_url="${RUBY_BUILD_MIRROR_URL}/$checksum"
+    if [ -n "$NODE_BUILD_MIRROR_URL" ]; then
+      mirror_url="${NODE_BUILD_MIRROR_URL}/$checksum"
     fi
   fi
 
@@ -256,10 +254,10 @@ fetch_tarball() {
 }
 
 symlink_tarball_from_cache() {
-  [ -n "$RUBY_BUILD_CACHE_PATH" ] || return 1
+  [ -n "$NODE_BUILD_CACHE_PATH" ] || return 1
 
   local package_filename="$1"
-  local cached_package_filename="${RUBY_BUILD_CACHE_PATH}/$package_filename"
+  local cached_package_filename="${NODE_BUILD_CACHE_PATH}/$package_filename"
   local checksum="$2"
 
   [ -e "$cached_package_filename" ] || return 1
@@ -280,8 +278,8 @@ download_tarball() {
     verify_checksum "$package_filename" "$checksum"
   } >&4 2>&1 || return 1
 
-  if [ -n "$RUBY_BUILD_CACHE_PATH" ]; then
-    local cached_package_filename="${RUBY_BUILD_CACHE_PATH}/$package_filename"
+  if [ -n "$NODE_BUILD_CACHE_PATH" ]; then
+    local cached_package_filename="${NODE_BUILD_CACHE_PATH}/$package_filename"
     { mv "$package_filename" "$cached_package_filename"
       ln -s "$cached_package_filename" "$package_filename"
     } >&4 2>&1 || return 1
@@ -296,8 +294,8 @@ fetch_git() {
   echo "Cloning ${git_url}..." >&2
 
   if type git &>/dev/null; then
-    if [ -n "$RUBY_BUILD_CACHE_PATH" ]; then
-      pushd "$RUBY_BUILD_CACHE_PATH" >&4
+    if [ -n "$NODE_BUILD_CACHE_PATH" ]; then
+      pushd "$NODE_BUILD_CACHE_PATH" >&4
       local clone_name="$(sanitize "$git_url")"
       if [ -e "${clone_name}" ]; then
         { cd "${clone_name}"
@@ -306,7 +304,7 @@ fetch_git() {
       else
         git clone --bare --branch "$git_ref" "$git_url" "${clone_name}" >&4 2>&1
       fi
-      git_url="$RUBY_BUILD_CACHE_PATH/${clone_name}"
+      git_url="$NODE_BUILD_CACHE_PATH/${clone_name}"
       popd >&4
     fi
 
@@ -394,109 +392,6 @@ build_package_autoconf() {
   } >&4 2>&1
 }
 
-build_package_ruby() {
-  local package_name="$1"
-
-  { "$RUBY_BIN" setup.rb
-  } >&4 2>&1
-}
-
-build_package_ree_installer() {
-  local options=""
-  if [[ "Darwin" = "$(uname)" ]]; then
-    options="--no-tcmalloc"
-
-    # Some versions of REE mistakenly detect Tk support
-    # on OS X even though X11 is not installed.
-    if [ ! -d "/usr/include/X11" ]; then
-      options="$options -c --without-tk"
-    fi
-  fi
-
-  local option
-  for option in $RUBY_CONFIGURE_OPTS; do
-    options="$options -c $option"
-  done
-
-  # Work around install_useful_libraries crash with --dont-install-useful-gems
-  mkdir -p "$PREFIX_PATH/lib/ruby/gems/1.8/gems"
-
-  { ./installer --auto "$PREFIX_PATH" --dont-install-useful-gems $options $CONFIGURE_OPTS
-  } >&4 2>&1
-}
-
-build_package_rbx() {
-  local package_name="$1"
-
-  { ./configure --prefix="$PREFIX_PATH" --gemsdir="$PREFIX_PATH" $RUBY_CONFIGURE_OPTS
-    rake install
-  } >&4 2>&1
-}
-
-build_package_mruby() {
-  local package_name="$1"
-
-  { rake
-    mkdir -p "$PREFIX_PATH"
-    cp -R build/host/* "$PREFIX_PATH"
-    cd "$PREFIX_PATH/bin"
-    ln -fs mruby ruby
-    ln -fs mirb irb
-  } >&4 2>&1
-}
-
-build_package_maglev() {
-  build_package_copy
-
-  { cd "${PREFIX_PATH}"
-    ./install.sh
-    cd "${PREFIX_PATH}/bin"
-    echo "Creating symlink for ruby*"
-    ln -fs maglev-ruby ruby
-    echo "Creating symlink for irb*"
-    ln -fs maglev-irb irb
-  } >&4 2>&1
-  echo
-  echo "Run 'maglev start' to start up the stone before using 'ruby' or 'irb'"
-}
-
-build_package_topaz() {
-  build_package_copy
-  { cd "${PREFIX_PATH}/bin"
-    echo "Creating symlink for ruby*"
-    ln -fs topaz ruby
-  } >&4 2>&1
-}
-
-topaz_architecture() {
-  case "$(uname -s)" in
-  "Darwin") echo "osx64";;
-  "Linux") [[ "$(uname -m)" = "x86_64" ]] && echo "linux64" || echo "linux32";;
-  *)
-    echo "no nightly builds available" >&2
-    exit 1;;
-  esac
-}
-
-build_package_jruby() {
-  build_package_copy
-  cd "${PREFIX_PATH}/bin"
-  ln -fs jruby ruby
-  install_jruby_launcher
-  remove_windows_files
-}
-
-install_jruby_launcher() {
-  cd "${PREFIX_PATH}/bin"
-  { ./ruby gem install jruby-launcher
-  } >&4 2>&1
-}
-
-remove_windows_files() {
-  cd "$PREFIX_PATH"
-  rm -f bin/*.exe bin/*.dll bin/*.bat bin/jruby.sh
-}
-
 build_package_copy() {
   mkdir -p "$PREFIX_PATH"
   cp -R . "$PREFIX_PATH"
@@ -515,149 +410,14 @@ fix_directory_permissions() {
   find "$PREFIX_PATH" -type d \( -perm -020 -o -perm -002 \) -exec chmod go-w {} \;
 }
 
-require_gcc() {
-  local gcc="$(locate_gcc || true)"
-
-  if [ -z "$gcc" ]; then
-    local esc=$'\033'
-    { echo
-      echo "${esc}[1mERROR${esc}[0m: This package must be compiled with GCC, but ruby-build couldn't"
-      echo "find a suitable \`gcc\` executable on your system. Please install GCC"
-      echo "and try again."
-      echo
-
-      if [ "$(uname -s)" = "Darwin" ]; then
-        echo "${esc}[1mDETAILS${esc}[0m: Apple no longer includes the official GCC compiler with Xcode"
-        echo "as of version 4.2. Instead, the \`gcc\` executable is a symlink to"
-        echo "\`llvm-gcc\`, a modified version of GCC which outputs LLVM bytecode."
-        echo
-        echo "For most programs the \`llvm-gcc\` compiler works fine. However,"
-        echo "versions of Ruby older than 1.9.3-p125 are incompatible with"
-        echo "\`llvm-gcc\`. To build older versions of Ruby you must have the official"
-        echo "GCC compiler installed on your system."
-        echo
-
-        if type brew &>/dev/null; then
-          echo "${esc}[1mTO FIX THE PROBLEM${esc}[0m: Install Homebrew's apple-gcc42 package with this"
-          echo "command: ${esc}[4mbrew tap homebrew/dupes ; brew install apple-gcc42${esc}[0m"
-        else
-          echo "${esc}[1mTO FIX THE PROBLEM${esc}[0m: Install the official GCC compiler using these"
-          echo "packages: ${esc}[4mhttps://github.com/kennethreitz/osx-gcc-installer/downloads${esc}[0m"
-        fi
-
-        echo
-        echo "You will need to install the official GCC compiler to build older"
-        echo "versions of Ruby even if you have installed Apple's Command Line Tools"
-        echo "for Xcode package. The Command Line Tools for Xcode package only"
-        echo "includes \`llvm-gcc\`."
-      fi
-    } >&3
-    return 1
-  fi
-
-  export CC="$gcc"
-}
-
-locate_gcc() {
-  local gcc gccs
-  IFS=: gccs=($(gccs_in_path))
-
-  verify_gcc "$CC" ||
-  verify_gcc "$(command -v gcc || true)" || {
-    for gcc in "${gccs[@]}"; do
-      verify_gcc "$gcc" && break || true
-    done
-  }
-
-  return 1
-}
-
-gccs_in_path() {
-  local gcc path paths
-  local gccs=()
-  IFS=: paths=($PATH)
-
-  shopt -s nullglob
-  for path in "${paths[@]}"; do
-    for gcc in "$path"/gcc-*; do
-      gccs["${#gccs[@]}"]="$gcc"
-    done
-  done
-  shopt -u nullglob
-
-  printf :%s "${gccs[@]}"
-}
-
-verify_gcc() {
-  local gcc="$1"
-  if [ -z "$gcc" ]; then
-    return 1
-  fi
-
-  local version="$("$gcc" --version || true)"
-  if [ -z "$version" ]; then
-    return 1
-  fi
-
-  if echo "$version" | grep LLVM >/dev/null; then
-    return 1
-  fi
-
-  echo "$gcc"
-}
-
-has_broken_mac_openssl() {
-  [ "$(uname -s)" = "Darwin" ] &&
-  [[ "$(openssl version 2>/dev/null || true)" = "OpenSSL 0.9.8"?* ]] &&
-  [[ "$RUBY_CONFIGURE_OPTS" != *--with-openssl-dir=* ]]
-}
-
-build_package_mac_openssl() {
-  # Install to a subdirectory since we don't want shims for bin/openssl.
-  OPENSSL_PREFIX_PATH="${PREFIX_PATH}/openssl"
-
-  # Put openssl.conf, certs, etc in ~/.rbenv/versions/*/openssl/ssl
-  OPENSSLDIR="${OPENSSLDIR:-$OPENSSL_PREFIX_PATH/ssl}"
-
-  # Tell Ruby to use this openssl for its extension.
-  package_option ruby configure --with-openssl-dir="$OPENSSL_PREFIX_PATH"
-
-  # Hint OpenSSL that we prefer a 64-bit build.
-  export KERNEL_BITS="64"
-  OPENSSL_CONFIGURE="${OPENSSL_CONFIGURE:-./config}"
-
-  # Compile a shared lib with zlib dynamically linked, no kerberos.
-  package_option openssl configure --openssldir="$OPENSSLDIR" zlib-dynamic no-krb5 shared
-
-  # Default MAKE_OPTS are -j 2 which can confuse the build. Thankfully, make
-  # gives precedence to the last -j option, so we can override that.
-  package_option openssl make -j 1
-
-  build_package_standard "$@"
-
-  # Extract root certs from the system keychain in .pem format and rehash.
-  local pem_file="$OPENSSLDIR/cert.pem"
-  security find-certificate -a -p /Library/Keychains/System.keychain > "$pem_file"
-  security find-certificate -a -p /System/Library/Keychains/SystemRootCertificates.keychain >> "$pem_file"
-}
-
-# Post-install check that the openssl extension was built.
-build_package_verify_openssl() {
-  "$RUBY_BIN" -e 'begin
-    require "openssl"
-  rescue LoadError
-    abort "The Ruby openssl extension was not compiled. Missing the OpenSSL lib?"
-  end' >&4 2>&1
-}
-
 version() {
-  echo "ruby-build ${RUBY_BUILD_VERSION}"
+  echo "node-build ${NODE_BUILD_VERSION}"
 }
 
 usage() {
   { version
-    echo "usage: ruby-build [-k|--keep] [-v|--verbose] definition prefix"
-    echo "       ruby-build --definitions"
+    echo "usage: node-build [-k|--keep] [-v|--verbose] definition prefix"
+    echo "       node-build --definitions"
   } >&2
 
   if [ -z "$1" ]; then
@@ -666,17 +426,86 @@ usage() {
 }
 
 list_definitions() {
-  { for definition in "${RUBY_BUILD_ROOT}/share/ruby-build/"*; do
-      echo "${definition##*/}"
-    done
-  } | sort
+  curl -s http://nodejs.org/dist/ \
+    | egrep -o 'v[0-9]+\.[0-9]+\.[0-9]+' \
+    | sort -t. -u -k 1.2,1n -k 2,2n -k 3,3n
 }
 
+ls_remote() {
+  local PATTERN=$1
+  local VERSIONS
+  if [ "$PATTERN" ]; then
+    if echo "${PATTERN}" | grep -v '^v' ; then
+      PATTERN=v$PATTERN
+    fi
+  else
+    PATTERN=".*"
+  fi
+  VERSIONS=$(list_definitions | grep -w "${PATTERN}")
+  if [ ! "$VERSIONS" ]; then
+    echo "N/A"
+    return
+  fi
+  echo "$VERSIONS"
+  return
+}
+
+remote_version() {
+  local PATTERN=$1
+  VERSION=$(ls_remote "$PATTERN" | tail -n1)
+  echo "$VERSION"
+
+  if [ "$VERSION" = 'N/A' ]; then
+    return
+  fi
+}
+
+install_node() {
+  local VERSION="$1"
+
+  local uname="$(uname -a)"
+  local os=
+  local arch="$(uname -m)"
+  case "$uname" in
+    Linux\ *) os=linux ;;
+    Darwin\ *) os=darwin ;;
+    SunOS\ *) os=sunos ;;
+    FreeBSD\ *) os=freebsd ;;
+  esac
+  case "$uname" in
+    *x86_64*) arch=x64 ;;
+    *i*86*) arch=x86 ;;
+  esac
+
+  nobinary=0
+  if [ "$os" = "freebsd" ]; then
+    nobinary=1
+  fi
+
+  if [ $nobinary -ne 1 ]; then
+    # shortcut - try the binary if possible.
+    if [ -n "$os" ]; then
+      binavail=
+      # binaries started with node 0.8.6
+      case "$VERSION" in
+        v0.8.[012345]) binavail=0 ;;
+        v0.[1234567].*) binavail=0 ;;
+        *) binavail=1 ;;
+      esac
+      if [ $binavail -eq 1 ]; then
+        t="$VERSION-$os-$arch"
+        sum=`curl -s http://nodejs.org/dist/$VERSION/SHASUMS.txt | grep node-${t}.tar.gz | awk '{print $1}'`
+        url="http://nodejs.org/dist/$VERSION/node-${t}.tar.gz#${sum}"
+        install_package "node-${t}" "$url" copy
+      fi
+    fi
+  fi
+} 
 
 
 unset VERBOSE
 unset KEEP_BUILD_PATH
-RUBY_BUILD_ROOT="$(abs_dirname "$0")/.."
+NODE_BUILD_ROOT="$(abs_dirname "$0")/.."
 
 parse_options "$@"
 
@@ -709,18 +538,7 @@ for option in "${OPTIONS[@]}"; do
   esac
 done
 
-DEFINITION_PATH="${ARGUMENTS[0]}"
-if [ -z "$DEFINITION_PATH" ]; then
-  usage
-elif [ ! -e "$DEFINITION_PATH" ]; then
-  BUILTIN_DEFINITION_PATH="${RUBY_BUILD_ROOT}/share/ruby-build/${DEFINITION_PATH}"
-  if [ -e "$BUILTIN_DEFINITION_PATH" ]; then
-    DEFINITION_PATH="$BUILTIN_DEFINITION_PATH"
-  else
-    echo "ruby-build: definition not found: ${DEFINITION_PATH}" >&2
-    exit 2
-  fi
-fi
+NODE_VERSION=$(remote_version "${ARGUMENTS[0]}")
 
 PREFIX_PATH="${ARGUMENTS[1]}"
 if [ -z "$PREFIX_PATH" ]; then
@@ -733,52 +551,42 @@ else
   TMP="${TMPDIR%/}"
 fi
 
-# Work around warnings building Ruby 2.0 on Clang 2.x:
-# pass -Wno-error=shorten-64-to-32 if the compiler accepts it.
-#
-# When we set CFLAGS, Ruby won't apply its default flags, though. Since clang
-# builds 1.9.x and 2.x only, where -O3 is default, we can safely set that flag.
-# Ensure it's the first flag since later flags take precedence.
-if "${CC:-cc}" -x c /dev/null -E -Wno-error=shorten-64-to-32 &>/dev/null; then
-  RUBY_CFLAGS="-O3 -Wno-error=shorten-64-to-32 $RUBY_CFLAGS"
-fi
-
 if [ -z "$MAKE" ]; then
   export MAKE="make"
 fi
 
-if [ -n "$RUBY_BUILD_CACHE_PATH" ] && [ -d "$RUBY_BUILD_CACHE_PATH" ]; then
-  RUBY_BUILD_CACHE_PATH="${RUBY_BUILD_CACHE_PATH%/}"
+if [ -n "$NODE_BUILD_CACHE_PATH" ] && [ -d "$NODE_BUILD_CACHE_PATH" ]; then
+  NODE_BUILD_CACHE_PATH="${NODE_BUILD_CACHE_PATH%/}"
 else
-  unset RUBY_BUILD_CACHE_PATH
+  unset NODE_BUILD_CACHE_PATH
 fi
 
-if [ -z "$RUBY_BUILD_MIRROR_URL" ]; then
-  RUBY_BUILD_MIRROR_URL="http://dqw8nmjcqpjn7.cloudfront.net"
+if [ -z "$NODE_BUILD_MIRROR_URL" ]; then
+  NODE_BUILD_MIRROR_URL="http://dqw8nmjcqpjn7.cloudfront.net"
 else
-  RUBY_BUILD_MIRROR_URL="${RUBY_BUILD_MIRROR_URL%/}"
+  NODE_BUILD_MIRROR_URL="${NODE_BUILD_MIRROR_URL%/}"
 fi
 
-if [ -n "$RUBY_BUILD_SKIP_MIRROR" ]; then
-  unset RUBY_BUILD_MIRROR_URL
+if [ -n "$NODE_BUILD_SKIP_MIRROR" ]; then
+  unset NODE_BUILD_MIRROR_URL
 fi
 
-if echo test | compute_md5 >/dev/null; then
-  HAS_MD5_SUPPORT=1
+if echo test | compute_sha1 >/dev/null; then
+  HAS_SHA1_SUPPORT=1
 else
-  unset HAS_MD5_SUPPORT
-  unset RUBY_BUILD_MIRROR_URL
+  unset HAS_SHA1_SUPPORT
+  unset NODE_BUILD_MIRROR_URL
 fi
 
 SEED="$(date "+%Y%m%d%H%M%S").$$"
-LOG_PATH="${TMP}/ruby-build.${SEED}.log"
-RUBY_BIN="${PREFIX_PATH}/bin/ruby"
+LOG_PATH="${TMP}/node-build.${SEED}.log"
+NODE_BIN="${PREFIX_PATH}/bin/node"
 CWD="$(pwd)"
 
-if [ -z "$RUBY_BUILD_BUILD_PATH" ]; then
-  BUILD_PATH="${TMP}/ruby-build.${SEED}"
+if [ -z "$NODE_BUILD_BUILD_PATH" ]; then
+  BUILD_PATH="${TMP}/node-build.${SEED}"
 else
-  BUILD_PATH="$RUBY_BUILD_BUILD_PATH"
+  BUILD_PATH="$NODE_BUILD_BUILD_PATH"
 fi
 
 exec 4<> "$LOG_PATH" # open the log file at fd 4
@@ -791,11 +599,12 @@ fi
 export LDFLAGS="-L'${PREFIX_PATH}/lib' ${LDFLAGS}"
 export CPPFLAGS="-I'${PREFIX_PATH}/include' ${CPPFLAGS}"
 
-unset RUBYOPT
-unset RUBYLIB
+unset NODEOPT
+unset NODELIB
 
 trap build_failed ERR
 mkdir -p "$BUILD_PATH"
-source "$DEFINITION_PATH"
+#source "$DEFINITION_PATH"
+install_node "$NODE_VERSION"
 [ -z "${KEEP_BUILD_PATH}" ] && rm -fr "$BUILD_PATH"
 trap - ERR

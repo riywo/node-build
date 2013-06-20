@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
 #
-# Summary: Uninstall a specific Ruby version
+# Summary: Uninstall a specific Node version
 #
-# Usage: rbenv uninstall [-f|--force] <version>
+# Usage: ndenv uninstall [-f|--force] <version>
 #
 #    -f  Attempt to remove the specified version without prompting
 #        for confirmation. If the version does not exist, do not
 #        display an error message.
 #
-# See `rbenv versions` for a complete list of installed versions.
+# See `ndenv versions` for a complete list of installed versions.
 #
 set -e
 
 # Provide rbenv completions
 if [ "$1" = "--complete" ]; then
-  exec rbenv versions --bare
+  exec ndenv versions --bare
 fi
 
-if [ -z "$RBENV_ROOT" ]; then
-  RBENV_ROOT="${HOME}/.rbenv"
+if [ -z "$NDENV_ROOT" ]; then
+  NDENV_ROOT="${HOME}/.ndenv"
 fi
 
 unset FORCE
@@ -31,7 +31,7 @@ DEFINITION="$1"
 case "$DEFINITION" in
 "" | -* )
   # We can remove the sed fallback once rbenv 0.4.0 is widely available.
-  { rbenv-help uninstall 2>/dev/null ||
+  { ndenv-help uninstall 2>/dev/null ||
     sed -ne '/^#/!q;s/.\{1,2\}//;1,4d;p' < "$0"
   } >&2
   exit 1
@@ -39,15 +39,15 @@ case "$DEFINITION" in
 esac
 
 VERSION_NAME="${DEFINITION##*/}"
-PREFIX="${RBENV_ROOT}/versions/${VERSION_NAME}"
+PREFIX="${NDENV_ROOT}/versions/${VERSION_NAME}"
 
 if [ -z "$FORCE" ]; then
   if [ ! -d "$PREFIX" ]; then
-    echo "rbenv: version \`$VERSION_NAME' not installed" >&2
+    echo "ndenv: version \`$VERSION_NAME' not installed" >&2
     exit 1
   fi
 
-  read -p "rbenv: remove $PREFIX? "
+  read -p "ndenv: remove $PREFIX? "
   case "$REPLY" in
   y* | Y* ) ;;
   * ) exit 1 ;;
@@ -56,5 +56,5 @@ fi
 
 if [ -d "$PREFIX" ]; then
   rm -rf "$PREFIX"
-  rbenv rehash
+  ndenv rehash
 fi

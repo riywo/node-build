@@ -114,7 +114,7 @@ done
 # Set VERSION_NAME from $DEFINITION, if it is not already set. Then
 # compute the installation prefix.
 [ -n "$VERSION_NAME" ] || VERSION_NAME="${DEFINITION##*/}"
-PREFIX="${RBENV_ROOT}/versions/${VERSION_NAME}"
+PREFIX="${NDENV_ROOT}/versions/${VERSION_NAME}"
 
 [ -d "${PREFIX}" ] && PREFIX_EXISTS=1
 
