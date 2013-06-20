@@ -1,45 +1,45 @@
 #!/usr/bin/env bash
 #
-# Summary: Install a Ruby version using the ruby-build plugin
+# Summary: Install a Node version using the node-build plugin
 #
-# Usage: rbenv install [-f|--force] [-k|--keep] [-v|--verbose] <version>
-#        rbenv install [-f|--force] [-k|--keep] [-v|--verbose] <definition-file>
-#        rbenv install -l|--list
+# Usage: ndenv install [-f|--force] [-k|--keep] [-v|--verbose] <version>
+#        ndenv install [-f|--force] [-k|--keep] [-v|--verbose] <definition-file>
+#        ndenv install -l|--list
 #
 #   -l/--list        List all available versions
 #   -f/--force       Install even if the version appears to be installed already
-#   -k/--keep        Keep source tree in $RBENV_BUILD_ROOT after installation
-#                    (defaults to $RBENV_ROOT/sources)
+#   -k/--keep        Keep source tree in $NDENV_BUILD_ROOT after installation
+#                    (defaults to $NDENV_ROOT/sources)
 #   -v/--verbose     Verbose mode: print compilation status to stdout
 #
-# For detailed information on installing Ruby versions with
-# ruby-build, including a list of environment variables for adjusting
-# compilation, see: https://github.com/sstephenson/ruby-build#usage
+# For detailed information on installing Node versions with
+# node-build, including a list of environment variables for adjusting
+# compilation, see: https://github.com/riywo/node-build#usage
 #
 set -e
-[ -n "$RBENV_DEBUG" ] && set -x
+[ -n "$NDENV_DEBUG" ] && set -x
 
-# Provide rbenv completions
+# Provide ndenv completions
 if [ "$1" = "--complete" ]; then
-  exec ruby-build --definitions
+  exec node-build --definitions
 fi
 
-if [ -z "$RBENV_ROOT" ]; then
-  RBENV_ROOT="${HOME}/.rbenv"
+if [ -z "$NDENV_ROOT" ]; then
+  NDENV_ROOT="${HOME}/.ndenv"
 fi
 
 # Load shared library functions
-eval "$(ruby-build --lib)"
+eval "$(node-build --lib)"
 
 usage() {
   # We can remove the sed fallback once rbenv 0.4.0 is widely available.
-  rbenv-help install 2>/dev/null || sed -ne '/^#/!q;s/.//;s/.//;1,4d;p' < "$0"
+  ndenv-help install 2>/dev/null || sed -ne '/^#/!q;s/.//;s/.//;1,4d;p' < "$0"
   [ -z "$1" ] || exit "$1"
 }
 
 definitions() {
   local query="$1"
-  ruby-build --definitions | grep -F "$query" || true
+  node-build --definitions | grep -F "$query" || true
 }
 
 indent() {
@@ -65,13 +65,13 @@ for option in "${OPTIONS[@]}"; do
     FORCE=true
     ;;
   "k" | "keep" )
-    [ -n "${RBENV_BUILD_ROOT}" ] || RBENV_BUILD_ROOT="${RBENV_ROOT}/sources"
+    [ -n "${NDENV_BUILD_ROOT}" ] || NDENV_BUILD_ROOT="${NDENV_ROOT}/sources"
     ;;
   "v" | "verbose" )
     VERBOSE="-v"
     ;;
   "version" )
-    exec ruby-build --version
+    exec node-build --version
     ;;
   * )
     usage 1
@@ -86,7 +86,7 @@ unset VERSION_NAME
 # version is specified by rbenv. Show usage instructions if a local
 # version is not specified.
 DEFINITION="${ARGUMENTS[0]}"
-[ -n "$DEFINITION" ] || DEFINITION="$(rbenv local 2>/dev/null || true)"
+[ -n "$DEFINITION" ] || DEFINITION="$(ndenv local 2>/dev/null || true)"
 [ -n "$DEFINITION" ] || usage 1
 
 
@@ -106,7 +106,7 @@ after_install() {
 }
 
 # Load plugin hooks.
-for script in $(rbenv-hooks install); do
+for script in $(ndenv-hooks install); do
   source "$script"
 done
 
@@ -121,7 +121,7 @@ PREFIX="${RBENV_ROOT}/versions/${VERSION_NAME}"
 # If the installation prefix exists, prompt for confirmation unless
 # the --force option was specified.
 if [ -z "$FORCE" ] && [ -d "${PREFIX}/bin" ]; then
-  echo "rbenv: $PREFIX already exists" >&2
+  echo "ndenv: $PREFIX already exists" >&2
   read -p "continue with installation? (y/N) "
 
   case "$REPLY" in
@@ -130,23 +130,20 @@ if [ -z "$FORCE" ] && [ -d "${PREFIX}/bin" ]; then
   esac
 fi
 
-# If RBENV_BUILD_ROOT is set, always pass keep options to ruby-build.
-if [ -n "${RBENV_BUILD_ROOT}" ]; then
-  export RUBY_BUILD_BUILD_PATH="${RBENV_BUILD_ROOT}/${VERSION_NAME}"
+# If NDENV_BUILD_ROOT is set, always pass keep options to node-build.
+if [ -n "${NDENV_BUILD_ROOT}" ]; then
+  export NODE_BUILD_BUILD_PATH="${NDENV_BUILD_ROOT}/${VERSION_NAME}"
   KEEP="-k"
 fi
 
-# Set RUBY_BUILD_CACHE_PATH to $RBENV_ROOT/cache, if the directory
+# Set NODE_BUILD_CACHE_PATH to $NDENV_ROOT/cache, if the directory
 # exists and the variable is not already set.
-if [ -z "${RUBY_BUILD_CACHE_PATH}" ] && [ -d "${RBENV_ROOT}/cache" ]; then
-  export RUBY_BUILD_CACHE_PATH="${RBENV_ROOT}/cache"
+if [ -z "${NODE_BUILD_CACHE_PATH}" ] && [ -d "${NDENV_ROOT}/cache" ]; then
+  export NODE_BUILD_CACHE_PATH="${NDENV_ROOT}/cache"
 fi
 
-# Default RBENV_VERSION to the globally-specified Ruby version. (The
-# REE installer requires an existing Ruby installation to run. An
-# unsatisfied local .ruby-version file can cause the installer to
-# fail.)
-export RBENV_VERSION="$(rbenv global 2>/dev/null || true)"
+# Default NDENV_VERSION to the globally-specified Node version.
+export NDENV_VERSION="$(ndenv global 2>/dev/null || true)"
 
 
 # Execute `before_install` hooks.
@@ -159,9 +156,9 @@ cleanup() {
 
 trap cleanup SIGINT
 
-# Invoke `ruby-build` and record the exit status in $STATUS.
+# Invoke `node-build` and record the exit status in $STATUS.
 STATUS=0
-ruby-build $KEEP $VERBOSE "$DEFINITION" "$PREFIX" || STATUS="$?"
+node-build $KEEP $VERBOSE "$DEFINITION" "$PREFIX" || STATUS="$?"
 
 # Display a more helpful message if the definition wasn't found.
 if [ "$STATUS" == "2" ]; then
@@ -172,20 +169,20 @@ if [ "$STATUS" == "2" ]; then
       echo "$candidates" | indent
     fi
     echo
-    echo "You can list all available versions with \`rbenv install --list'."
+    echo "You can list all available versions with \`ndenv install --list'."
     echo
     echo "If the version you're looking for is not present, first try upgrading"
-    echo "ruby-build. If it's still missing, open a request on the ruby-build"
-    echo "issue tracker: https://github.com/sstephenson/ruby-build/issues"
+    echo "node-build. If it's still missing, open a request on the node-build"
+    echo "issue tracker: https://github.com/riywo/node-build/issues"
   } >&2
 fi
 
 # Execute `after_install` hooks.
 for hook in "${after_hooks[@]}"; do eval "$hook"; done
 
-# Run `rbenv-rehash` after a successful installation.
+# Run `ndenv-rehash` after a successful installation.
 if [ "$STATUS" == "0" ]; then
-  rbenv rehash
+  ndenv rehash
 else
   cleanup
 fi
