@@ -1,5 +1,5 @@
 # node-build
-node-build is an [ndenv]() plugin that provides an `ndenv install` command.
+node-build is an [ndenv](https://github.com/riywo/ndenv) plugin that provides an `ndenv install` command.
 
 Almost all of code come from [ruby-build](https://github.com/sstephenson/ruby-build) and [nvm](https://github.com/creationix/nvm). Thanks a lot!
 
