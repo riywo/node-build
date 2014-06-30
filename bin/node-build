@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-NODE_BUILD_VERSION="20130620"
+NODE_BUILD_VERSION="20140629"
 
 set -E
 exec 3<&2 # preserve original stderr at fd 3
@@ -475,6 +475,10 @@ install_node() {
   case "$uname" in
     *x86_64*) arch=x64 ;;
     *i*86*) arch=x86 ;;
+  esac
+
+  case "$arch" in
+    armv6l) arch=arm-pi ;;
   esac
 
   nobinary=0
