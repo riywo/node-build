@@ -2,6 +2,8 @@
 
 set -e
 
+cd "$(dirname "$0")"
+
 if [ -z "${PREFIX}" ]; then
   PREFIX="/usr/local"
 fi
@@ -14,10 +16,6 @@ mkdir -p "${SHARE_PATH}"
 
 for file in bin/*; do
   cp "${file}" "${BIN_PATH}"
-done
-
-for file in share/node-build/*; do
-  cp "${file}" "${SHARE_PATH}"
 done
 
 echo "Installed node-build at ${PREFIX}"
