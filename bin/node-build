@@ -625,8 +625,6 @@ do_install() {
   local NORMALIZED_PATTERN="$(normalize_version "$PATTERN")"
   local DIST="$(get_version_prefix "$NORMALIZED_PATTERN")"
   local VERSION="$(get_version "$NORMALIZED_PATTERN")"
-  echo "$PATTERN" >&2
-  echo "$DIST-$VERSION" >&2
 
   case "$DIST" in
     "iojs" ) install_iojs "$VERSION" ;;
