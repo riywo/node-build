@@ -200,7 +200,7 @@ verify_checksum() {
     [ -n "$HAS_SHA1_SUPPORT" ] || return 0
     local checksum_command="compute_sha1"
 
-  # If the checksum length is 40 chars, assume SHA-256
+  # If the checksum length is 64 chars, assume SHA-256
   elif [ "$expected_checksum_length" -eq 64 ]; then
 
     # If there's no SHA2 support, return success
@@ -456,23 +456,68 @@ usage() {
   fi
 }
 
-list_definitions() {
-  curl -s http://nodejs.org/dist/ \
+list_definitions_node() {
+  curl -s https://nodejs.org/dist/ \
     | egrep -o 'v[0-9]+\.[0-9]+\.[0-9]+' \
     | sort -t. -u -k 1.2,1n -k 2,2n -k 3,3n
+}
+
+list_definitions_iojs() {
+  curl -s https://iojs.org/dist/index.tab \
+    | awk '{print $1}' \
+    | egrep -o 'v[0-9]+\.[0-9]+\.[0-9]+' \
+    | sort -t. -u -k 1.2,1n -k 2,2n -k 3,3n \
+    | sed -e 's/^/iojs-/'
+}
+
+list_definitions() {
+  local PATTERN=$1
+  case "$PATTERN" in
+    iojs-*) list_definitions_iojs ;;
+    node-*) list_definitions_node ;;
+    *)     list_definitions_node; list_definitions_iojs ;;
+  esac
+}
+
+get_version_prefix() {
+  local PATTERN=$1
+  local PREFIX=
+  case "$PATTERN" in
+    iojs-*) PREFIX="iojs" ;;
+         *) PREFIX=""     ;;
+  esac
+  echo "$PREFIX"
+}
+
+get_version() {
+  local PATTERN=$1
+  echo "$PATTERN" | sed -e "s/^[^\.]\{1,\}\-//"
+}
+
+normalize_version() {
+  local PATTERN=$1
+  local PREFIX=$(get_version_prefix "$PATTERN")
+  local VERSION=$(get_version "$PATTERN")
+  if echo "$VERSION" | grep -v '^v' &>/dev/null ; then
+    VERSION=v$VERSION
+  fi
+
+  if [ ${#PREFIX} -ne 0 ]; then
+    echo "${PREFIX}-${VERSION}"
+  else
+    echo "${VERSION}"
+  fi
 }
 
 ls_remote() {
   local PATTERN=$1
   local VERSIONS
   if [ "$PATTERN" ]; then
-    if echo "${PATTERN}" | grep -v '^v' ; then
-      PATTERN=v$PATTERN
-    fi
+    PATTERN="$(normalize_version "$PATTERN")"
   else
     PATTERN=".*"
   fi
-  VERSIONS=$(list_definitions | grep -w "${PATTERN}")
+  VERSIONS=$(list_definitions "$PATTERN" | egrep -w "^${PATTERN}")
   if [ ! "$VERSIONS" ]; then
     echo "N/A"
     return
@@ -483,11 +528,11 @@ ls_remote() {
 
 remote_version() {
   local PATTERN=$1
-  VERSION=$(ls_remote "$PATTERN" | tail -n1)
+  local VERSION=$(ls_remote "$PATTERN" | tail -n1)
   echo "$VERSION"
 
   if [ "$VERSION" = 'N/A' ]; then
-    return
+    return 1
   fi
 }
 
@@ -497,11 +542,13 @@ install_node() {
   local uname="$(uname -a)"
   local os=
   local arch="$(uname -m)"
+  local nobinary=0
+
   case "$uname" in
     Linux\ *) os=linux ;;
-    Darwin\ *) os=darwin ;;
+    Darwin\ *) os=darwin; ;;
     SunOS\ *) os=sunos ;;
-    FreeBSD\ *) os=freebsd ;;
+    FreeBSD\ *) os=freebsd; nobinary=1 ;;
   esac
   case "$uname" in
     *x86_64*) arch=x64 ;;
@@ -512,21 +559,17 @@ install_node() {
     armv6l) arch=arm-pi ;;
   esac
 
-  nobinary=0
-  if [ "$os" = "freebsd" ]; then
-    nobinary=1
-  fi
-
   if [ $nobinary -ne 1 ]; then
     # shortcut - try the binary if possible.
     if [ -n "$os" ]; then
-      binavail=
+      local binavail=
       # binaries started with node 0.8.6
       case "$VERSION" in
         v0.8.[012345]) binavail=0 ;;
         v0.[1234567].*) binavail=0 ;;
         *) binavail=1 ;;
       esac
+
       sha_algorithm=
       # checksum is SHA256 in v0.10 and above and SHA1 in v0.9 and below
       case "$VERSION" in
@@ -536,13 +579,60 @@ install_node() {
 
       if [ $binavail -eq 1 ]; then
         t="$VERSION-$os-$arch"
-        sum=`curl -s http://nodejs.org/dist/$VERSION/SHASUMS${sha_algorithm}.txt | grep node-${t}.tar.gz | awk '{print $1}'`
-        url="http://nodejs.org/dist/$VERSION/node-${t}.tar.gz#${sum}"
+        sum=`curl -s https://nodejs.org/dist/$VERSION/SHASUMS${sha_algorithm}.txt | grep node-${t}.tar.gz | awk '{print $1}'`
+        url="https://nodejs.org/dist/$VERSION/node-${t}.tar.gz#${sum}"
         install_package "node-${t}" "$url" copy
       fi
     fi
   fi
-} 
+}
+
+install_iojs() {
+  local VERSION="$1"
+
+  local uname="$(uname -a)"
+  local os=
+  local arch="$(uname -m)"
+  local nobinary=0
+
+  case "$uname" in
+    Linux\ *) os=linux ;;
+    Darwin\ *) os=darwin; ;;
+    SunOS\ *) os=sunos; nobinary=1 ;;
+    FreeBSD\ *) os=freebsd; nobinary=1 ;;
+  esac
+  case "$uname" in
+    *x86_64*) arch=x64 ;;
+    *i*86*) arch=x86 ;;
+  esac
+
+  case "$arch" in
+    armv6l) arch=armv6l ;;
+    armv7l) arch=armv7l ;;
+  esac
+
+  if [ $nobinary -ne 1 ]; then
+    sha_algorithm=256
+    t="$VERSION-$os-$arch"
+    sum=`curl -s https://iojs.org/dist/$VERSION/SHASUMS${sha_algorithm}.txt | grep iojs-${t}.tar.gz | awk '{print $1}'`
+    url="https://iojs.org/dist/$VERSION/iojs-${t}.tar.gz#${sum}"
+    install_package "iojs-${t}" "$url" copy
+  fi
+}
+
+do_install() {
+  local PATTERN="$1"
+  local NORMALIZED_PATTERN="$(normalize_version "$PATTERN")"
+  local DIST="$(get_version_prefix "$NORMALIZED_PATTERN")"
+  local VERSION="$(get_version "$NORMALIZED_PATTERN")"
+  echo "$PATTERN" >&2
+  echo "$DIST-$VERSION" >&2
+
+  case "$DIST" in
+    "iojs" ) install_iojs "$VERSION" ;;
+         * ) install_node "$VERSION" ;;
+  esac
+}
 
 
 unset VERBOSE
@@ -580,7 +670,12 @@ for option in "${OPTIONS[@]}"; do
   esac
 done
 
-NODE_VERSION=$(remote_version "${ARGUMENTS[0]}")
+NODE_VERSION=$(remote_version "${ARGUMENTS[0]}") || {
+  echo "The specified version is not available."
+  echo "Run ndenv install -l or node-build --definitions"
+  echo "to show available versions of node.js/io.js."
+  exit 1
+}
 
 PREFIX_PATH="${ARGUMENTS[1]}"
 if [ -z "$PREFIX_PATH" ]; then
@@ -642,6 +737,6 @@ unset NODELIB
 trap build_failed ERR
 mkdir -p "$BUILD_PATH"
 #source "$DEFINITION_PATH"
-install_node "$NODE_VERSION"
+do_install "$NODE_VERSION"
 [ -z "${KEEP_BUILD_PATH}" ] && rm -fr "$BUILD_PATH"
 trap - ERR
