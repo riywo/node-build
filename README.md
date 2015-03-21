@@ -7,7 +7,8 @@ Almost all of code come from [ruby-build](https://github.com/sstephenson/ruby-bu
 
     $ git clone https://github.com/riywo/node-build.git ~/.ndenv/plugins/node-build
 
-node-build currently supports only download a compiled tarball. 
+node-build currently supports only download a compiled tarball.
+Both [node.js](http://nodejs.org/) and [io.js](https://iojs.org) are supported.
 
 ## LICENSE
 
