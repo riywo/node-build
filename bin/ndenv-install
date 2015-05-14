@@ -6,11 +6,12 @@
 #        ndenv install [-f|--force] [-k|--keep] [-v|--verbose] <definition-file>
 #        ndenv install -l|--list
 #
-#   -l/--list        List all available versions
-#   -f/--force       Install even if the version appears to be installed already
-#   -k/--keep        Keep source tree in $NDENV_BUILD_ROOT after installation
-#                    (defaults to $NDENV_ROOT/sources)
-#   -v/--verbose     Verbose mode: print compilation status to stdout
+#   -l/--list          List all available versions
+#   -f/--force         Install even if the version appears to be installed already
+#   -s/--skip-existing Skip if the version appears to be installed already
+#   -k/--keep          Keep source tree in $NDENV_BUILD_ROOT after installation
+#                      (defaults to $NDENV_ROOT/sources)
+#   -v/--verbose       Verbose mode: print compilation status to stdout
 #
 # For detailed information on installing Node versions with
 # node-build, including a list of environment variables for adjusting
@@ -47,6 +48,7 @@ indent() {
 }
 
 unset FORCE
+unset SKIP_EXISTING
 unset KEEP
 unset VERBOSE
 
@@ -63,6 +65,9 @@ for option in "${OPTIONS[@]}"; do
     ;;
   "f" | "force" )
     FORCE=true
+    ;;
+  "s" | "skip-existing" )
+    SKIP_EXISTING=true
     ;;
   "k" | "keep" )
     [ -n "${NDENV_BUILD_ROOT}" ] || NDENV_BUILD_ROOT="${NDENV_ROOT}/sources"
@@ -120,14 +125,21 @@ PREFIX="${NDENV_ROOT}/versions/${VERSION_NAME}"
 
 # If the installation prefix exists, prompt for confirmation unless
 # the --force option was specified.
-if [ -z "$FORCE" ] && [ -d "${PREFIX}/bin" ]; then
-  echo "ndenv: $PREFIX already exists" >&2
-  read -p "continue with installation? (y/N) "
+if [ -d "${PREFIX}/bin" ]; then
+  if [ -z "$FORCE" ] && [ -z "$SKIP_EXISTING" ]; then
+    echo "ndenv: $PREFIX already exists" >&2
+    read -p "continue with installation? (y/N) "
 
-  case "$REPLY" in
-  y* | Y* ) ;;
-  * ) exit 1 ;;
-  esac
+    case "$REPLY" in
+    y* | Y* ) ;;
+    * ) exit 1 ;;
+    esac
+  elif [ -n "$SKIP_EXISTING" ]; then
+    # Since we know the node version is already installed, and are opting to
+    # not force installation of existing versions, we just `exit 0` here to
+    # leave things happy
+    exit 0
+  fi
 fi
 
 # If NDENV_BUILD_ROOT is set, always pass keep options to node-build.
