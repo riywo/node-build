@@ -6,11 +6,12 @@
 #        ndenv install [-f|--force] [-k|--keep] [-v|--verbose] <definition-file>
 #        ndenv install -l|--list
 #
-#   -l/--list        List all available versions
-#   -f/--force       Install even if the version appears to be installed already
-#   -k/--keep        Keep source tree in $NDENV_BUILD_ROOT after installation
-#                    (defaults to $NDENV_ROOT/sources)
-#   -v/--verbose     Verbose mode: print compilation status to stdout
+#   -l/--list          List all available versions
+#   -f/--force         Install even if the version appears to be installed already
+#   -k/--keep          Keep source tree in $NDENV_BUILD_ROOT after installation
+#                      (defaults to $NDENV_ROOT/sources)
+#   -v/--verbose       Verbose mode: print compilation status to stdout
+#   -s/--skip-existing Skip if the version appears to be installed already
 #
 # For detailed information on installing Node versions with
 # node-build, including a list of environment variables for adjusting
@@ -63,6 +64,9 @@ for option in "${OPTIONS[@]}"; do
     ;;
   "f" | "force" )
     FORCE=true
+    ;;
+  "s" | "skip-existing" )
+    SKIP_EXISTING=true
     ;;
   "k" | "keep" )
     [ -n "${NDENV_BUILD_ROOT}" ] || NDENV_BUILD_ROOT="${NDENV_ROOT}/sources"
@@ -121,6 +125,10 @@ PREFIX="${NDENV_ROOT}/versions/${VERSION_NAME}"
 # If the installation prefix exists, prompt for confirmation unless
 # the --force option was specified.
 if [ -z "$FORCE" ] && [ -d "${PREFIX}/bin" ]; then
+  if [ "$SKIP_EXISTING" = true ] ; then
+    exit 1
+  fi
+
   echo "ndenv: $PREFIX already exists" >&2
   read -p "continue with installation? (y/N) "
 
