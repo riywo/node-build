@@ -2,6 +2,12 @@
 
 NODE_BUILD_VERSION="20150215"
 
+if [ -z "$NODE_BUILD_MIRROR_URL" ]; then
+  NODE_BUILD_MIRROR_URL="https://nodejs.org/dist"
+else
+  NODE_BUILD_MIRROR_URL="${NODE_BUILD_MIRROR_URL%/}"
+fi
+
 set -E
 exec 3<&2 # preserve original stderr at fd 3
 
@@ -457,13 +463,15 @@ usage() {
 }
 
 list_definitions_node() {
-  curl -s https://nodejs.org/dist/ \
+  # `https://nodejs.org/dist` returns a 301 response and redirects us to
+  # `https://nodejs.org/dist/`.  So we pass `-L` to curl.
+  curl -sL "$NODE_BUILD_MIRROR_URL" \
     | egrep -o 'v[0-9]+\.[0-9]+\.[0-9]+' \
     | sort -t. -u -k 1.2,1n -k 2,2n -k 3,3n
 }
 
 list_definitions_iojs() {
-  curl -s https://iojs.org/dist/index.tab \
+  curl -sL https://iojs.org/dist/index.tab \
     | awk '{print $1}' \
     | egrep -o 'v[0-9]+\.[0-9]+\.[0-9]+' \
     | sort -t. -u -k 1.2,1n -k 2,2n -k 3,3n \
@@ -579,8 +587,8 @@ install_node() {
 
       if [ $binavail -eq 1 ]; then
         t="$VERSION-$os-$arch"
-        sum=`curl -s https://nodejs.org/dist/$VERSION/SHASUMS${sha_algorithm}.txt | grep node-${t}.tar.gz | awk '{print $1}'`
-        url="https://nodejs.org/dist/$VERSION/node-${t}.tar.gz#${sum}"
+        sum=`curl -sL $NODE_BUILD_MIRROR_URL/$VERSION/SHASUMS${sha_algorithm}.txt | grep node-${t}.tar.gz | awk '{print $1}'`
+        url="$NODE_BUILD_MIRROR_URL/$VERSION/node-${t}.tar.gz#${sum}"
         install_package "node-${t}" "$url" copy
       fi
     fi

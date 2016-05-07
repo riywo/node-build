@@ -10,6 +10,10 @@ Almost all of code come from [ruby-build](https://github.com/sstephenson/ruby-bu
 node-build currently supports only download a compiled tarball.
 Both [node.js](http://nodejs.org/) and [io.js](https://iojs.org) are supported.
 
+## Mirrors
+
+You can download from a mirror by specifying `NODE_BUILD_MIRROR_URL`.  The default value is `https://nodejs.org/dist`.
+
 ## LICENSE
 
 (The MIT license)
