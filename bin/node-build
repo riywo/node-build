@@ -553,6 +553,7 @@ install_node() {
   case "$uname" in
     *x86_64*) arch=x64 ;;
     *i*86*) arch=x86 ;;
+    *arm64* | *aarch64* ) arch=arm64 ;;
   esac
 
   case "$arch" in
@@ -604,6 +605,7 @@ install_iojs() {
   case "$uname" in
     *x86_64*) arch=x64 ;;
     *i*86*) arch=x86 ;;
+    *arm64* | *aarch64* ) arch=arm64 ;;
   esac
 
   case "$arch" in
